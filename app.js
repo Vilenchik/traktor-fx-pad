@@ -348,12 +348,6 @@ function openPicker(u, s) {
     };
     list.appendChild(b);
   });
-  if (f.fb && settings.names[f.idx] !== undefined) {
-    const r = document.createElement('button');
-    r.textContent = '↺ Забыть привязку для этого номера';
-    r.onclick = () => { delete settings.names[f.idx]; save(); renderAll(); $('dlgFx').close(); };
-    list.prepend(r);
-  }
   $('dlgFx').showModal();
 }
 
