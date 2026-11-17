@@ -33,6 +33,20 @@ const DEFAULT_FX = [
   'Dark Matter',
 ].join('\n');
 
+// Numbers Traktor sends on the Effect Selector Out mapping, filled in by hand (2026-11-17).
+// Traktor scales the effect position 0..43 onto 0..127, so the steps are ~3 apart.
+const DEFAULT_NAMES = {
+  0: 'No Effect', 2: 'Delay', 5: 'Reverb', 8: 'Flanger', 11: 'Flanger Pulse', 14: 'Flanger Flux',
+  17: 'Gater', 20: 'Beatmasher 2', 23: 'Delay T3', 26: 'Filter LFO', 29: 'Filter Pulse', 32: 'Filter',
+  35: 'Filter:92 LFO', 38: 'Filter:92 Pulse', 41: 'Filter:92', 44: 'Phaser', 47: 'Phaser Pulse',
+  50: 'Phaser Flux', 53: 'Reverse Grain', 56: 'Turntable FX', 59: 'Iceverb', 62: 'Reverb T3',
+  64: 'Ringmodulator', 67: 'Digital LoFi', 70: 'Mulholland Drive', 73: 'Transpose Stretch',
+  76: 'BeatSlicer', 79: 'Formant Filter', 82: 'Peak Filter', 85: 'Tape Delay', 88: 'Ramp Delay',
+  91: 'Auto Bouncer', 94: 'Bouncer', 97: 'Wormhole', 100: 'LaserSlicer', 103: 'GranuPhase',
+  106: 'Bass-o-Matic', 109: 'PolarWind', 112: 'Event Horizon', 115: 'Zzzurp', 118: 'Flight Test',
+  121: 'Strrretch (Slow)', 124: 'Strrretch (Fast)', 127: 'Dark Matter',
+};
+
 /* ---------- settings (per-device convenience) ---------- */
 const LS = 'traktor-fx-pad.v1';
 const settings = Object.assign(
@@ -41,6 +55,8 @@ const settings = Object.assign(
     names: {} },                    // learned: number Traktor sends → effect name
   (() => { try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch { return {}; } })()
 );
+settings.names = Object.assign({}, DEFAULT_NAMES, settings.names);   // phone-learned entries win
+settings.fx = DEFAULT_FX;   // list is no longer editable in the UI
 if (settings.padMode) { const s = settings.padMode === 'spring'; settings.spring = [s, s]; delete settings.padMode; }
 const save = () => { try { localStorage.setItem(LS, JSON.stringify(settings)); } catch {} };
 let FX = [];
@@ -137,14 +153,17 @@ function onMidi(e) {
   }
 }
 
-// Name for a number: a learned name wins, otherwise position in our list
-const fxName = i => settings.names[i] ?? FX[i] ?? ('#' + i);
+// A slot's idx is a raw Traktor number once feedback arrived (fb), otherwise a position in our list
+const fxName = f => (f.fb ? settings.names[f.idx] : FX[f.idx]) ?? ('#' + f.idx);
 
 function setIdx(u, s, i) {
   // feedback from Traktor may exceed our list, so only clamp locally counted values
   const max = units[u].fx[s].fb ? 127 : FX.length - 1;
-  units[u].fx[s].idx = Math.max(0, Math.min(max, i));
-  settings.idx[u][s] = units[u].fx[s].idx;
+  const f = units[u].fx[s];
+  f.idx = Math.max(0, Math.min(max, i));
+  // always store a list position, so a restart (no feedback yet) shows the right name
+  const pos = f.fb ? FX.indexOf(fxName(f)) : f.idx;
+  if (pos >= 0) settings.idx[u][s] = pos;
   save();
 }
 
@@ -247,8 +266,8 @@ function buildUnit(u) {
       const k = (s ? 'fx2' : 'fx1') + (dir > 0 ? 'Next' : 'Prev');
       b.addEventListener('pointerdown', () => {
         send(u, k, 127);
-        setIdx(u, s, U.fx[s].idx + dir);
-        render(u);
+        // with feedback Traktor tells us the new effect; count locally only without it
+        if (!U.fx[s].fb) { setIdx(u, s, U.fx[s].idx + dir); render(u); }
       });
       const rel = () => send(u, k, 0);
       b.addEventListener('pointerup', rel); b.addEventListener('pointercancel', rel);
@@ -293,16 +312,16 @@ function render(u) {
   E.hx.style.left = px + '%'; E.hy.style.top = py + '%';
   E.dot.style.left = px + '%'; E.dot.style.top = py + '%';
   E.pad.classList.toggle('touch', U.padTouch !== false);
-  E.ax.textContent = `${fxName(U.fx[0].idx)} → ${Math.round(U.x / 1.27)}%`;
-  E.ay.textContent = `↑ ${fxName(U.fx[1].idx)} ${Math.round(U.y / 1.27)}%`;
+  E.ax.textContent = `${fxName(U.fx[0])} → ${Math.round(U.x / 1.27)}%`;
+  E.ay.textContent = `↑ ${fxName(U.fx[1])} ${Math.round(U.y / 1.27)}%`;
   E.tg.forEach(b => b.classList.toggle('on', !!U[b.dataset.t]));
   E.ret.classList.toggle('on', !!settings.spring[u]);
   E.names.forEach((n, s) => {
     const f = U.fx[s];
     n.classList.toggle('on', f.on);
     // small line shows the raw number once Traktor sends it — handy for checking sync
-    n.querySelector('small').textContent = `FX ${s + 1}` + (f.fb ? ` · ${f.idx}` : '');
-    n.querySelector('span').textContent = fxName(f.idx);
+    n.querySelector('small').textContent = `FX ${s + 1}`;
+    n.querySelector('span').textContent = fxName(f);
   });
 }
 const renderAll = () => { render(0); render(1); };
@@ -321,7 +340,7 @@ function openPicker(u, s) {
   FX.forEach((name, i) => {
     const b = document.createElement('button');
     b.textContent = f.fb ? name : `${i}. ${name}`;
-    if (name === fxName(f.idx)) b.className = 'cur';
+    if (name === fxName(f)) b.className = 'cur';
     b.onclick = () => {
       if (f.fb) { settings.names[f.idx] = name; save(); }
       else setIdx(u, s, i);
@@ -350,9 +369,6 @@ function buildSettings() {
   $('selDw').onchange = e => { settings.dwMode = e.target.value; save(); syncDw(); renderAll(); };
   $('selAuto').value = settings.autoOn ? '1' : '0';
   $('selAuto').onchange = e => { settings.autoOn = e.target.value === '1'; save(); };
-  const tx = $('txtFx');
-  tx.value = settings.fx;
-  tx.onchange = () => { settings.fx = tx.value; save(); parseFx(); renderAll(); };
   buildMap();
 }
 
