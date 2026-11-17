@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0d0f10">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Traktor FX Pad</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<style>
+  :root{
+    --bg:#0d0f10; --panel:#15181a; --panel2:#1b1f22; --line:#2a3034; --text:#d9e0e3; --mute:#7c878d;
+    --teal:#1fa58f; --teal-d:#12594f; --orange:#f08a24; --red:#e0473c;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+    font:14px/1.3 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden;
+    user-select:none;-webkit-user-select:none;touch-action:none}
+  button{font:inherit;color:inherit;background:var(--panel2);border:1px solid var(--line);border-radius:6px;cursor:pointer}
+  button:active{filter:brightness(1.3)}
+  .app{height:100dvh;display:flex;flex-direction:column;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+
+  /* top bar */
+  .bar{display:flex;align-items:center;gap:10px;padding:6px 10px;border-bottom:1px solid var(--line)}
+  .logo{font-weight:700;letter-spacing:.08em;font-size:12px;color:var(--mute)}
+  .logo b{color:var(--orange)}
+  .midi{flex:1;display:flex;align-items:center;gap:6px;min-width:0;font-size:12px;color:var(--mute)}
+  .midi span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .led{width:8px;height:8px;border-radius:50%;background:var(--red);flex:none;transition:background .08s}
+  .led.ok{background:var(--teal)} .led.act{background:#9ff5e5}
+  .bar button{width:36px;height:32px;font-size:16px;padding:0}
+
+  /* units */
+  .units{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px;min-height:0}
+  @media (orientation:portrait){.units{grid-template-columns:1fr;grid-template-rows:1fr 1fr}}
+  .unit{background:var(--panel);border:1px solid var(--line);border-radius:10px;display:flex;flex-direction:column;gap:8px;padding:8px;min-height:0}
+  .uhead{display:flex;align-items:center;gap:6px}
+  .unum{color:var(--orange);font-weight:700;font-size:16px;margin-right:auto;letter-spacing:.05em}
+  .tg{height:30px;min-width:40px;padding:0 10px;font-weight:600;font-size:13px}
+  .tg.on{background:var(--teal);border-color:var(--teal);color:#04120f}
+
+  .ubody{flex:1;display:flex;gap:8px;min-height:0}
+  .fader{width:52px;flex:none;position:relative;background:var(--panel2);border:1px solid var(--line);border-radius:8px;overflow:hidden;touch-action:none}
+  .fader .fill{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(to top,var(--orange),#f5b26b);opacity:.85}
+  .fader .fill{transition:opacity .08s}
+  .fader.armed .fill{opacity:.3}
+  .fader .lbl{position:absolute;left:0;right:0;top:6px;text-align:center;font-size:11px;font-weight:700;color:#fff;mix-blend-mode:difference}
+  .fader .val{position:absolute;left:0;right:0;bottom:6px;text-align:center;font-size:11px;font-variant-numeric:tabular-nums;color:#fff;mix-blend-mode:difference}
+
+  .pad{flex:1;position:relative;border-radius:8px;border:1px solid var(--line);touch-action:none;overflow:hidden;
+    background:
+      linear-gradient(var(--line) 1px,transparent 1px) 0 0/25% 25%,
+      linear-gradient(90deg,var(--line) 1px,transparent 1px) 0 0/25% 25%,
+      radial-gradient(circle at 100% 0,#123a35 0,var(--panel2) 70%)}
+  .pad .hx,.pad .hy{position:absolute;background:var(--teal);opacity:.45;pointer-events:none}
+  .pad .hx{top:0;bottom:0;width:1px}
+  .pad .hy{left:0;right:0;height:1px}
+  .pad .dot{position:absolute;width:34px;height:34px;margin:-17px 0 0 -17px;border-radius:50%;pointer-events:none;
+    background:radial-gradient(circle,#c9fff4 0,var(--teal) 45%,transparent 72%);opacity:.55;transition:opacity .1s}
+  .pad.touch .dot{opacity:1;box-shadow:0 0 24px var(--teal)}
+  .pad .ax{position:absolute;font-size:11px;color:var(--mute);pointer-events:none;font-variant-numeric:tabular-nums}
+  .pad .ax.x{right:8px;bottom:6px} .pad .ax.y{left:8px;top:6px}
+
+  .slots{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .slot{display:flex;gap:4px;min-width:0}
+  .slot .nav{width:40px;flex:none;height:42px;font-size:20px;padding:0}
+  .slot .name{flex:1;min-width:0;height:42px;padding:0 6px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;
+    overflow:hidden;position:relative;line-height:1.1}
+  .slot .name span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
+  .slot .name small{display:block;font-size:9px;color:var(--mute);font-weight:500}
+  .slot .name.on{background:var(--teal-d);border-color:var(--teal);color:#fff}
+  .slot .name.on small{color:#9ff5e5}
+
+  /* dialogs */
+  dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:0;
+    width:min(560px,calc(100vw - 32px));max-height:calc(100dvh - 32px)}
+  dialog::backdrop{background:#000a}
+  .dlg{display:flex;flex-direction:column;max-height:calc(100dvh - 34px)}
+  .dlg header{display:flex;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line);font-weight:700}
+  .dlg header button{margin-left:auto;width:34px;height:30px;padding:0}
+  .dlg .content{overflow:auto;padding:12px 14px;user-select:text;-webkit-user-select:text;touch-action:pan-y}
+  .row{display:flex;align-items:center;gap:10px;margin:0 0 10px}
+  .row label{width:120px;flex:none;color:var(--mute);font-size:13px}
+  select,textarea,input[type=number]{font:inherit;color:var(--text);background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:6px 8px;flex:1;min-width:0}
+  textarea{width:100%;height:160px;font-size:12px;resize:vertical}
+  h3{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--orange);margin:16px 0 8px}
+  p.hint{color:var(--mute);font-size:12px;margin:4px 0 10px}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  td{padding:5px 4px;border-bottom:1px solid var(--line)}
+  td.n{font-variant-numeric:tabular-nums;color:var(--orange);width:44px}
+  td.b{width:44px;text-align:right}
+  td.b button{width:38px;height:28px;padding:0}
+  .fxlist button{display:block;width:100%;text-align:left;padding:10px 12px;margin:0 0 4px}
+  .fxlist button.cur{background:var(--teal-d);border-color:var(--teal)}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="bar">
+    <div class="logo"><b>TRAKTOR</b> FX PAD</div>
+    <div class="midi"><i class="led" id="led"></i><span id="midiName">MIDI…</span></div>
+    <button id="btnFull" title="Во весь экран">⛶</button>
+    <button id="btnSet" title="Настройки">⚙</button>
+  </div>
+  <div class="units" id="units"></div>
+</div>
+
+<dialog id="dlgSet"><div class="dlg">
+  <header>Настройки<button data-close>✕</button></header>
+  <div class="content">
+    <div class="row"><label>MIDI выход</label><select id="selOut"></select></div>
+    <div class="row"><label>MIDI вход</label><select id="selIn"></select></div>
+    <div class="row"><label>MIDI канал</label><select id="selCh"></select></div>
+    <div class="row"><label></label><button id="btnMidi" style="padding:6px 12px">Переподключить MIDI</button></div>
+
+    <h3>XY-пэд</h3>
+    <div class="row"><label>Dry/Wet</label><select id="selDw">
+      <option value="touch">По касанию (ползунок = глубина)</option>
+      <option value="manual">Только ползунком</option>
+    </select></div>
+    <div class="row"><label>Отпускание</label><select id="selPad">
+      <option value="latch">Остаётся на месте</option>
+      <option value="spring">Возврат в 0</option>
+    </select></div>
+    <div class="row"><label>Касание = FX вкл</label><select id="selAuto">
+      <option value="0">Нет</option>
+      <option value="1">Да (палец на пэде включает оба эффекта)</option>
+    </select></div>
+
+    <h3>Список эффектов</h3>
+    <p class="hint">В том же порядке, что в Traktor (Preferences → Effects → Pre-selection), первая строка — No Effect. По нему приложение показывает названия.</p>
+    <textarea id="txtFx" spellcheck="false"></textarea>
+
+    <h3>MIDI-карта (для Traktor Learn)</h3>
+    <p class="hint">В Controller Manager включите Learn, выберите команду и нажмите ▶ — уйдёт только этот CC.</p>
+    <table id="tblMap"></table>
+  </div>
+</div></dialog>
+
+<dialog id="dlgFx"><div class="dlg">
+  <header><span id="fxTitle">Эффект</span><button data-close>✕</button></header>
+  <div class="content fxlist" id="fxList"></div>
+</div></dialog>
+
+<script src="app.js"></script>
+</body>
+</html>
