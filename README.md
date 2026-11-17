@@ -37,11 +37,24 @@ XY-контроллер эффектов для **Traktor Pro 3** на Android-�
 
 ## Настройка Traktor
 
+### Готовый маппинг
+
+В репозитории лежит готовый файл [`traktor/FX_Pad.tsi`](traktor/FX_Pad.tsi) со всеми командами ниже,
+включая обратную связь. Сделан в Traktor Pro 3.11.
+
+1. Скачайте файл: откройте его на GitHub и нажмите **Download raw file**.
+2. Traktor → Preferences → Controller Manager → **Import** → выберите `FX_Pad.tsi`.
+3. В Device выберите импортированное устройство **FX PAD**, в In-Port и Out-Port — телефон
+   (обычно название модели или «Android»).
+
+### Вручную
+
 Preferences → Controller Manager → **Add… → Generic MIDI**.
-In-Port и Out-Port — устройство телефона (обычно название модели или «Android»). Канал MIDI — 1.
+In-Port и Out-Port — устройство телефона. Канал MIDI — 1.
 
 Команды проще всего назначать через **Learn**: в приложении откройте ⚙ → «MIDI-карта» и нажмите ▶
-у нужной строки, отправится только этот CC.
+у нужной строки, отправится только этот CC. Для Dry/Wet и Knob снимите галочку **Soft Takeover**,
+иначе Traktor пропускает резкие скачки значения, и Dry/Wet по касанию не срабатывает.
 
 ### Входящие команды (телефон → Traktor)
 
@@ -113,6 +126,7 @@ GitHub Pages публикует ветку `main` автоматически.
 | `sw.js` | Service worker для офлайн-режима |
 | `manifest.webmanifest` | Манифест PWA |
 | `icon-192.png`, `icon-512.png` | Иконки приложения |
+| `traktor/FX_Pad.tsi` | Готовый маппинг для Traktor Pro 3 |
 
 ## Ограничения
 
