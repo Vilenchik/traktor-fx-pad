@@ -7,7 +7,7 @@ const CC = {
   dw: 0, x: 1, y: 2,
   fx1On: 3, fx2On: 4,
   fx1Prev: 5, fx1Next: 6, fx2Prev: 7, fx2Next: 8,
-  deckA: 9, deckB: 10, on: 11,
+  deckA: 9, deckB: 10,              // CC +11 is free (was Unit On)
   fx1Idx: 12, fx2Idx: 13,          // incoming from Traktor (effect index feedback)
 };
 const KEY_BY_OFS = Object.fromEntries(Object.entries(CC).map(([k, v]) => [v, k]));
@@ -17,7 +17,6 @@ const LABEL = {
   fx1Prev: 'FX 1 выбор − (Button, Dec)', fx1Next: 'FX 1 выбор + (Button, Inc)',
   fx2Prev: 'FX 2 выбор − (Button, Dec)', fx2Next: 'FX 2 выбор + (Button, Inc)',
   deckA: 'Назначить на деку A (Hold)', deckB: 'Назначить на деку B (Hold)',
-  on: 'FX Unit On (Hold)',
   fx1Idx: '← Out: номер эффекта FX 1', fx2Idx: '← Out: номер эффекта FX 2',
 };
 const CONTINUOUS = new Set(['dw', 'x', 'y']);
@@ -37,9 +36,12 @@ const DEFAULT_FX = [
 /* ---------- settings (per-device convenience) ---------- */
 const LS = 'traktor-fx-pad.v1';
 const settings = Object.assign(
-  { outName: '', inName: '', ch: 1, padMode: 'latch', dwMode: 'touch', autoOn: false, fx: DEFAULT_FX, idx: [[13, 12], [37, 20]] },
+  { outName: '', inName: '', ch: 1, spring: [false, false], dwMode: 'touch', autoOn: false, fx: DEFAULT_FX,
+    idx: [[13, 12], [37, 20]],
+    names: {} },                    // learned: number Traktor sends → effect name
   (() => { try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch { return {}; } })()
 );
+if (settings.padMode) { const s = settings.padMode === 'spring'; settings.spring = [s, s]; delete settings.padMode; }
 const save = () => { try { localStorage.setItem(LS, JSON.stringify(settings)); } catch {} };
 let FX = [];
 const parseFx = () => { FX = settings.fx.split('\n').map(s => s.trim()).filter(Boolean); if (!FX.length) FX = ['No Effect']; };
@@ -47,8 +49,8 @@ parseFx();
 
 /* ---------- state ---------- */
 const units = [0, 1].map(u => ({
-  dw: 0, x: 0, y: 0, on: true, deckA: false, deckB: false,
-  fx: [{ on: false, idx: settings.idx[u][0] }, { on: false, idx: settings.idx[u][1] }],
+  dw: 0, x: 0, y: 0, deckA: false, deckB: false,
+  fx: [{ on: false, idx: settings.idx[u][0], fb: false }, { on: false, idx: settings.idx[u][1], fb: false }],
   padTouch: false, faderTouch: false, el: {},
 }));
 
@@ -126,17 +128,22 @@ function onMidi(e) {
       case 'x': case 'y': if (!U.padTouch) U[key] = v; break;
       case 'fx1On': U.fx[0].on = v > 63; break;
       case 'fx2On': U.fx[1].on = v > 63; break;
-      case 'deckA': case 'deckB': case 'on': U[key] = v > 63; break;
-      case 'fx1Idx': setIdx(u, 0, v); break;
-      case 'fx2Idx': setIdx(u, 1, v); break;
+      case 'deckA': case 'deckB': U[key] = v > 63; break;
+      case 'fx1Idx': U.fx[0].fb = true; setIdx(u, 0, v); break;
+      case 'fx2Idx': U.fx[1].fb = true; setIdx(u, 1, v); break;
       default: return;
     }
     render(u);
   }
 }
 
+// Name for a number: a learned name wins, otherwise position in our list
+const fxName = i => settings.names[i] ?? FX[i] ?? ('#' + i);
+
 function setIdx(u, s, i) {
-  units[u].fx[s].idx = Math.max(0, Math.min(FX.length - 1, i));
+  // feedback from Traktor may exceed our list, so only clamp locally counted values
+  const max = units[u].fx[s].fb ? 127 : FX.length - 1;
+  units[u].fx[s].idx = Math.max(0, Math.min(max, i));
   settings.idx[u][s] = units[u].fx[s].idx;
   save();
 }
@@ -158,7 +165,7 @@ function buildUnit(u) {
       <span class="unum">FX ${u + 1}</span>
       <button class="tg" data-t="deckA">A</button>
       <button class="tg" data-t="deckB">B</button>
-      <button class="tg" data-t="on">ON</button>
+      <button class="tg ret" title="Возврат XY в 0 при отпускании">↺ 0</button>
     </div>
     <div class="ubody">
       <div class="fader"><div class="fill"></div><span class="lbl">D/W</span><span class="val"></span></div>
@@ -176,13 +183,19 @@ function buildUnit(u) {
   const q = s => el.querySelector(s);
   U.el = {
     root: el, fader: q('.fader'), fill: q('.fill'), val: q('.val'), pad: q('.pad'), hx: q('.hx'), hy: q('.hy'), dot: q('.dot'),
-    ax: q('.ax.x'), ay: q('.ax.y'), tg: el.querySelectorAll('.tg'),
+    ax: q('.ax.x'), ay: q('.ax.y'), tg: el.querySelectorAll('.tg[data-t]'), ret: q('.ret'),
     names: el.querySelectorAll('.slot .name'),
   };
 
-  // toggles A / B / ON
+  // toggles A / B
   for (const b of U.el.tg) b.addEventListener('click', () => {
     const k = b.dataset.t; U[k] = !U[k]; send(u, k, U[k] ? 127 : 0); render(u);
+  });
+  // return-to-0 toggle (local setting, no MIDI); turning it on also resets an idle pad
+  U.el.ret.addEventListener('click', () => {
+    settings.spring[u] = !settings.spring[u]; save();
+    if (settings.spring[u] && U.padTouch === false) springBack(u);
+    render(u);
   });
 
   // dry/wet fader
@@ -219,10 +232,7 @@ function buildUnit(u) {
     if (U.padTouch !== e.pointerId) return;
     U.padTouch = false;
     if (settings.dwMode === 'touch') send(u, 'dw', 0);   // back to dry first
-    if (settings.padMode === 'spring') {
-      if (U.x) { U.x = 0; send(u, 'x', 0); }
-      if (U.y) { U.y = 0; send(u, 'y', 0); }
-    }
+    if (settings.spring[u]) springBack(u);
     if (settings.autoOn) setFxOn(u, false);
     render(u);
   };
@@ -263,6 +273,12 @@ function buildUnit(u) {
   $('units').appendChild(el);
 }
 
+function springBack(u) {
+  const U = units[u];
+  if (U.x) { U.x = 0; send(u, 'x', 0); }
+  if (U.y) { U.y = 0; send(u, 'y', 0); }
+}
+
 function setFxOn(u, on) {
   const U = units[u];
   U.fx.forEach((f, s) => { if (f.on !== on) { f.on = on; send(u, s ? 'fx2On' : 'fx1On', on ? 127 : 0); } });
@@ -277,28 +293,48 @@ function render(u) {
   E.hx.style.left = px + '%'; E.hy.style.top = py + '%';
   E.dot.style.left = px + '%'; E.dot.style.top = py + '%';
   E.pad.classList.toggle('touch', U.padTouch !== false);
-  E.ax.textContent = `${FX[U.fx[0].idx] || 'FX 1'} → ${Math.round(U.x / 1.27)}%`;
-  E.ay.textContent = `↑ ${FX[U.fx[1].idx] || 'FX 2'} ${Math.round(U.y / 1.27)}%`;
+  E.ax.textContent = `${fxName(U.fx[0].idx)} → ${Math.round(U.x / 1.27)}%`;
+  E.ay.textContent = `↑ ${fxName(U.fx[1].idx)} ${Math.round(U.y / 1.27)}%`;
   E.tg.forEach(b => b.classList.toggle('on', !!U[b.dataset.t]));
+  E.ret.classList.toggle('on', !!settings.spring[u]);
   E.names.forEach((n, s) => {
-    n.classList.toggle('on', U.fx[s].on);
-    n.querySelector('span').textContent = FX[U.fx[s].idx] ?? ('#' + U.fx[s].idx);
+    const f = U.fx[s];
+    n.classList.toggle('on', f.on);
+    // small line shows the raw number once Traktor sends it — handy for checking sync
+    n.querySelector('small').textContent = `FX ${s + 1}` + (f.fb ? ` · ${f.idx}` : '');
+    n.querySelector('span').textContent = fxName(f.idx);
   });
 }
 const renderAll = () => { render(0); render(1); };
 
 /* ---------- effect picker (fixes the displayed name if it drifted) ---------- */
+// Without feedback: picking a name moves our counter there.
+// With feedback: the number came from Traktor and is right, so picking a name
+// teaches "this number = this name" (remembered for good).
 function openPicker(u, s) {
-  $('fxTitle').textContent = `FX ${u + 1} · слот ${s + 1} — какой эффект сейчас в Traktor?`;
+  const f = units[u].fx[s];
+  $('fxTitle').textContent = f.fb
+    ? `Traktor прислал № ${f.idx} — какой это эффект?`
+    : `FX ${u + 1} · слот ${s + 1} — какой эффект сейчас в Traktor?`;
   const list = $('fxList');
   list.innerHTML = '';
   FX.forEach((name, i) => {
     const b = document.createElement('button');
-    b.textContent = `${i}. ${name}`;
-    if (i === units[u].fx[s].idx) b.className = 'cur';
-    b.onclick = () => { setIdx(u, s, i); render(u); $('dlgFx').close(); };
+    b.textContent = f.fb ? name : `${i}. ${name}`;
+    if (name === fxName(f.idx)) b.className = 'cur';
+    b.onclick = () => {
+      if (f.fb) { settings.names[f.idx] = name; save(); }
+      else setIdx(u, s, i);
+      renderAll(); $('dlgFx').close();
+    };
     list.appendChild(b);
   });
+  if (f.fb && settings.names[f.idx] !== undefined) {
+    const r = document.createElement('button');
+    r.textContent = '↺ Забыть привязку для этого номера';
+    r.onclick = () => { delete settings.names[f.idx]; save(); renderAll(); $('dlgFx').close(); };
+    list.prepend(r);
+  }
   $('dlgFx').showModal();
 }
 
@@ -310,8 +346,6 @@ function buildSettings() {
   $('selOut').onchange = e => { settings.outName = e.target.value; save(); refreshPorts(); };
   $('selIn').onchange = e => { settings.inName = e.target.value; save(); refreshPorts(); };
   $('btnMidi').onclick = initMidi;
-  $('selPad').value = settings.padMode;
-  $('selPad').onchange = e => { settings.padMode = e.target.value; save(); };
   $('selDw').value = settings.dwMode;
   $('selDw').onchange = e => { settings.dwMode = e.target.value; save(); syncDw(); renderAll(); };
   $('selAuto').value = settings.autoOn ? '1' : '0';

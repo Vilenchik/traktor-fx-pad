@@ -1,4 +1,4 @@
-const CACHE = 'fx-pad-v2';
+const CACHE = 'fx-pad-v3';
 const FILES = ['./', 'index.html', 'app.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {
